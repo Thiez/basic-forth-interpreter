@@ -103,9 +103,12 @@ impl Forth {
         let mut state = ParseState::Normal;
         let mut curr_custom_word = String::new();
 
-        let input_uppercased = &input.to_uppercase() as &str;
-        let input_separated = to_space_separated(input_uppercased.clone());
-        let input_split = input_separated.split_whitespace().collect::<Vec<&str>>();
+        let input = input.chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .flat_map(char::to_uppercase)
+            .collect::<String>();
+        let input_split = input.split_whitespace()
+            .collect::<Vec<_>>();
 
         for item_str in input_split.iter() {
             match state {
@@ -227,10 +230,4 @@ fn eval_command(stack: &mut Vec<Value>, c: StackWord) -> ForthResult {
                     stack.push(a);
                 })
     }
-}
-
-fn to_space_separated(s: &str) -> String {
-    s.chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect()
 }
