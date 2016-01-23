@@ -175,15 +175,13 @@ impl Forth {
     }
 
     fn str_to_item(&self, s: String) -> Result<Vec<Item>, Error> {
-        match s.parse::<Value>() {
-            Ok(v) => Ok(vec![Item::Exec_(Exec::Value_(v))].into_iter().collect()),
-            Err(_) => {
-                match self.word_map.get(&s.to_uppercase()) {
-                    Some(w) => Ok((*w).clone()),
-                    None    => Err(Error::UnknownWord),
-                }
-            }
-        }
+        s.parse()
+            .map(Exec::Value_)
+            .map(Item::Exec_)
+            .map(|e|vec![e])
+            .ok()
+            .or_else(|| self.word_map.get(&s.to_uppercase()).cloned())
+            .ok_or(Error::UnknownWord)
     }
 }
 
