@@ -80,35 +80,22 @@ impl Forth {
     }
 
     pub fn eval(&mut self, input: &str) -> ForthResult {
-        match self.input_parse(input) {
-            Ok(v) => {
-                for i in v.into_iter() {
-                    match i {
-                        Item::Exec_(s) => match s {
-                            Exec::Arith_(o) => {
-                                let (a, b) = match (self.stack.pop(), self.stack.pop()) {
-                                    (Some(a), Some(b)) => (a, b),
-                                    (_, _) => return Err(Error::StackUnderflow),
-                                };
-                                match eval_oper(a, b, o) {
-                                    Ok(v) => self.stack.push(v),
-                                    Err(e) => return Err(e),
-                                }
-                            },
-                            Exec::Stack_(c) => {
-                                try!(eval_command(&mut self.stack, c));
-                            },
-                            Exec::Value_(v) => {
-                                self.stack.push(v);
-                            },
-                        },
-                        _ => (),
-                    }
+        self.input_parse(input)
+            .and_then(|v| v.into_iter().map(|i| {
+                match i {
+                    Item::Exec_(Exec::Arith_(o)) => 
+                        self.stack.pop()
+                            .and_then(|a| self.stack.pop().map(|b|(a,b)))
+                            .ok_or(Error::StackUnderflow)
+                            .and_then(|(a,b)| eval_oper(a, b, o))
+                            .map(|v| self.stack.push(v)),
+                    Item::Exec_(Exec::Stack_(c)) =>
+                        eval_command(&mut self.stack, c),
+                    Item::Exec_(Exec::Value_(v)) =>
+                        Ok(self.stack.push(v)),
+                    _ => Ok(())
                 }
-            },
-            Err(e) => return Err(e),
-        }
-        Ok(())
+            }).fold(Ok(()), Result::and))
     }
 
     fn input_parse(&mut self, input: &str) -> Result<Vec<Item>, Error> {
