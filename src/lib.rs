@@ -203,38 +203,32 @@ fn eval_oper(a: Value, b: Value, o: ArithWord) -> Result<Value, Error> {
 
 fn eval_command(stack: &mut Vec<Value>, c: StackWord) -> ForthResult {
     match c {
-        StackWord::Dup => {
-            let a = match stack.last() {
-                Some(&a) => a,
-                _ => return Err(Error::StackUnderflow),
-            };
-            stack.push(a);
-        },
-        StackWord::Drop => {
-            match stack.pop() {
-                Some(_) => (),
-                _ => return Err(Error::StackUnderflow),
-            }
-        },
-        StackWord::Swap => {
-            let (a, b) = match (stack.pop(), stack.pop()) {
-                (Some(a), Some(b)) => (a, b),
-                (_, _) => return Err(Error::StackUnderflow),
-            };
-            stack.push(a);
-            stack.push(b);
-        },
-        StackWord::Over => {
-            let len = stack.len();
-            if len < 2 { return Err(Error::StackUnderflow) };
-            let a = match stack.get(len - 2) {
-                Some(&a) => a,
-                _ => return Err(Error::StackUnderflow),
-            };
-            stack.push(a);
-        },
+        StackWord::Dup =>
+            stack.pop()
+                .ok_or(Error::StackUnderflow)
+                .map(|a| {
+                    stack.push(a);
+                    stack.push(a);
+                }),
+        StackWord::Drop =>
+            stack.pop()
+                .ok_or(Error::StackUnderflow)
+                .map(drop),
+        StackWord::Swap =>
+            stack.pop()
+                .and_then(|b| stack.pop().map(|a|(a,b)))
+                .ok_or(Error::StackUnderflow)
+                .map(|(a,b)| { stack.push(b); stack.push(a) }),
+        StackWord::Over =>
+            stack.pop()
+                .and_then(|b| stack.pop().map(|a|(a,b)))
+                .ok_or(Error::StackUnderflow)
+                .map(|(a,b)| {
+                    stack.push(a);
+                    stack.push(b);
+                    stack.push(a);
+                })
     }
-    Ok(())
 }
 
 fn to_space_separated(s: &str) -> String {
