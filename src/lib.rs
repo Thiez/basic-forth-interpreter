@@ -100,84 +100,61 @@ impl Forth {
 
     fn input_parse(&mut self, input: &str) -> Result<Vec<Item>, Error> {
         let mut items = vec![];
-        let mut state = ParseState::Normal;
         let mut curr_custom_word = String::new();
 
-        let input = input.chars()
+        input.chars()
             .map(|c| if c.is_control() { ' ' } else { c })
             .flat_map(char::to_uppercase)
-            .collect::<String>();
-        let input_split = input.split_whitespace()
-            .collect::<Vec<_>>();
-
-        for item_str in input_split.iter() {
+            .collect::<String>()
+            .split_whitespace()
+            .fold(Ok(ParseState::Normal), |state, item| state.and_then(|state|
             match state {
-                ParseState::Normal => {
-                    match self.str_to_item(item_str.clone().to_owned()) {
-                        Ok(v) => {
-                            let first_item = try!(v.last().clone().ok_or(Error::InvalidWord));
-
-                            if first_item == &Item::Symbol_(Symbol::Colon) {
-                                state = ParseState::CustomInit;
+               ParseState::Normal =>
+                    self.str_to_item(item)
+                        .and_then(|v| if v.is_empty() {
+                                Err(Error::InvalidWord)
+                            } else if v.ends_with(&[Item::Symbol_(Symbol::Colon)]) {
+                                Ok(ParseState::CustomInit)
                             } else {
-                                for i in v.iter() {
-                                    items.push((*i).clone());
-                                }
-                            }
-                        },
-                        Err(e) => return Err(e),
-                    }
-                },
-                ParseState::CustomInit => {
-                    // Cannot re-define numbers
-                    match self.str_to_item(item_str.clone().to_owned()) {
-                        Ok(v) => {
-                            let first_item = try!(v.last().clone().ok_or(Error::InvalidWord));
-
-                            match first_item {
-                                &Item::Exec_(Exec::Value_(_)) => return Err(Error::InvalidWord),
-                                _ => (),
-                            }
-                        },
-                        _ => (),
-                    }
-
-                    curr_custom_word = item_str.clone().to_owned();
-                    self.word_map.insert(curr_custom_word.clone(), vec![]);
-
-                    state = ParseState::Custom;
-                },
-                ParseState::Custom => {
-                    match self.str_to_item(item_str.clone().to_owned()) {
-                        Ok(v) => {
-                            let first_item = try!(v.last().clone().ok_or(Error::InvalidWord));
-
-                            if first_item == &Item::Symbol_(Symbol::SemiColon) {
-                                state = ParseState::Normal;
+                                items.extend(v);
+                                Ok(ParseState::Normal)
+                            }),
+                ParseState::CustomInit =>
+                    self.str_to_item(item)
+                        .ok()
+                        .map(|v| if v.is_empty() {
+                                Err(Error::InvalidWord)
+                            } else if let Some(&Item::Exec_(Exec::Value_(_))) = v.last() {
+                                Err(Error::InvalidWord)
                             } else {
-                                match self.word_map.get_mut(&curr_custom_word.clone()) {
-                                    Some(w) => {
-                                        for i in v.iter() {
-                                            w.push((*i).clone());
-                                        }
-                                    },
-                                    None => (),
-                                }
-                            }
-                        },
-                        Err(e) => return Err(e),
-                    }
-                },
-            }
-        }
-
-        match state {
-            ParseState::Normal => Ok(items),
-            _ => Err(Error::InvalidWord),
-        }
+                                Ok::<_, Error>(ParseState::Custom)
+                            })
+                        .unwrap_or(Ok(ParseState::Custom))
+                        .map(|s| {
+                            curr_custom_word = item.to_owned();
+                            self.word_map.insert(item.to_owned(), vec![]);
+                            s
+                        }),
+                ParseState::Custom =>
+                    self.str_to_item(item)
+                        .and_then(|v| if v.is_empty() {
+                                Err(Error::InvalidWord)
+                            } else if let Some(&Item::Symbol_(Symbol::SemiColon)) = v.last() {
+                                Ok(ParseState::Normal)
+                            } else {
+                                self.word_map.get_mut(&curr_custom_word.clone())
+                                    .map(|w| w.extend(v));
+                                Ok(ParseState::Custom)
+                            })
+            }))
+            .and_then(|s| if s == ParseState::Normal {
+                    Ok(items)
+                } else {
+                    Err(Error::InvalidWord)
+                })
     }
 
-    fn str_to_item(&self, s: String) -> Result<Vec<Item>, Error> {
+    fn str_to_item(&self, s: &str) -> Result<Vec<Item>, Error> {
         s.parse()
             .map(Exec::Value_)
             .map(Item::Exec_)
